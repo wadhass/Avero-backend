@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import mongoose from 'mongoose'
 import authenticate from '../middleware/authenticate.js'
+import { receiveAvatar, removeUploadedMedia } from '../middleware/mediaUpload.js'
 import Friendship from '../models/Friendship.js'
 import Post from '../models/Post.js'
 import User from '../models/User.js'
@@ -8,6 +9,30 @@ import { asyncHandler, HttpError } from '../utils/errors.js'
 
 const router = Router()
 router.use(authenticate)
+
+router.patch(
+  '/me/avatar',
+  receiveAvatar,
+  asyncHandler(async (req, res) => {
+    if (!req.file) throw new HttpError(400, 'Choose an image for your profile picture')
+
+    const previousAvatar = req.user.avatar
+    const avatar = `/uploads/${req.file.filename}`
+    req.user.avatar = avatar
+    try {
+      await req.user.save()
+    } catch (error) {
+      await removeUploadedMedia(avatar)
+      throw error
+    }
+
+    if (previousAvatar && previousAvatar !== avatar) {
+      await removeUploadedMedia(previousAvatar)
+    }
+
+    return res.json({ user: { id: req.user.id, name: req.user.name, email: req.user.email, avatar } })
+  }),
+)
 
 router.get(
   '/:userId',
