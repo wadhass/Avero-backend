@@ -25,12 +25,12 @@ The repository-root `render.yaml` creates both the API and frontend services in 
 When Render prompts for environment values, provide:
 
 - `MONGODB_URI`: your production MongoDB Atlas connection string. Allow Render's outbound connections in the Atlas network access settings.
-- `CLIENT_ORIGIN`: the deployed frontend origin, for example `https://qavero-frontend.onrender.com` (no trailing slash).
+- `CLIENT_ORIGIN`: the deployed frontend origin, for example `https://qavero-frontend.onrender.com` (no trailing slash). Replace it with your actual frontend URL if the service name or domain differs.
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM`: the credentials and sender address from your SMTP provider.
 
-Render generates `JWT_SECRET` and mounts the media disk at `/var/data`. Never add production secrets to this repository. After creating the frontend, confirm its exact URL is listed in `CLIENT_ORIGIN`, then redeploy the API.
+The Blueprint generates `JWT_SECRET`, connects the frontend to the API automatically, and mounts the media disk at `/var/data`. Never add production secrets to this repository. If you use a custom frontend domain, set its exact origin in `CLIENT_ORIGIN` and redeploy the API.
 
-For the frontend service, set `VITE_API_URL` to the deployed API URL ending in `/api`, for example `https://qavero-api.onrender.com/api`, then redeploy the frontend. This is a public API URL, not a secret. SMTP and database credentials belong only in the backend service environment.
+`MONGODB_URI` and SMTP credentials belong only in the backend service environment. If you change the API URL or use a custom API domain, update the frontend's `VITE_API_URL` reference in the Blueprint and redeploy the frontend.
 
 ## Authentication endpoints
 
