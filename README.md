@@ -25,10 +25,10 @@ The repository-root `render.yaml` creates both the API and frontend services in 
 When Render prompts for environment values, provide:
 
 - `MONGODB_URI`: your production MongoDB Atlas connection string. Allow Render's outbound connections in the Atlas network access settings.
-- `CLIENT_ORIGIN`: the deployed frontend origin, for example `https://qavero-frontend.onrender.com` (no trailing slash). Replace it with your actual frontend URL if the service name or domain differs.
+- `CLIENT_ORIGIN`: the deployed frontend origin. The Blueprint defaults to `https://facebook-clone-91m6.vercel.app`; change it if your Vercel domain differs (no trailing slash).
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM`: the credentials and sender address from your SMTP provider.
 
-The Blueprint generates `JWT_SECRET`, connects the frontend to the API automatically, and mounts the media disk at `/var/data`. Never add production secrets to this repository. If you use a custom frontend domain, set its exact origin in `CLIENT_ORIGIN` and redeploy the API.
+The Blueprint generates `JWT_SECRET` and mounts the media disk at `/var/data`. The API allows the configured `CLIENT_ORIGIN` values and the deployed Vercel origin above. Never add production secrets to this repository. If you use a different frontend domain, set its exact origin in `CLIENT_ORIGIN` and redeploy the API.
 
 `MONGODB_URI` and SMTP credentials belong only in the backend service environment. If you change the API URL or use a custom API domain, update the frontend's `VITE_API_URL` reference in the Blueprint and redeploy the frontend.
 

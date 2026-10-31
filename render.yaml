@@ -22,7 +22,7 @@ services:
       - key: MONGODB_URI
         sync: false
       - key: CLIENT_ORIGIN
-        sync: false
+        value: https://facebook-clone-91m6.vercel.app
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT

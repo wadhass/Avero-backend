@@ -20,9 +20,13 @@ app.set('trust proxy', process.env.NODE_ENV === 'production' ? 1 : false)
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }))
+const clientOrigins = [
+  ...(process.env.CLIENT_ORIGIN?.split(',') ?? []),
+  'https://facebook-clone-91m6.vercel.app',
+].map((origin) => origin.trim()).filter(Boolean)
 app.use(
   cors({
-    origin: process.env.CLIENT_ORIGIN?.split(',').map((origin) => origin.trim()) ?? false,
+    origin: clientOrigins,
   }),
 )
 app.use(express.json({ limit: '1mb' }))
