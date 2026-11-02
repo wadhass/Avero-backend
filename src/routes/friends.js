@@ -4,6 +4,7 @@ import authenticate from '../middleware/authenticate.js'
 import Friendship from '../models/Friendship.js'
 import User from '../models/User.js'
 import { asyncHandler, HttpError } from '../utils/errors.js'
+import { createNotification } from '../utils/notifications.js'
 
 const router = Router()
 router.use(authenticate)
@@ -96,12 +97,30 @@ router.post(
       if (prior.recipient.equals(req.user.id)) {
         prior.status = 'accepted'
         await prior.save()
+        await createNotification({
+          io: req.app.get('io'),
+          recipient: prior.requester,
+          actor: req.user.id,
+          type: 'friend_accepted',
+          message: 'accepted your friend request',
+        })
         return res.json({ status: 'accepted' })
       }
       throw new HttpError(409, 'A friend request already exists')
     }
 
-    await Friendship.create({ requester: req.user.id, recipient: req.params.userId })
+    const friendship = await Friendship.create({
+      requester: req.user.id,
+      recipient: req.params.userId,
+    })
+    await createNotification({
+      io: req.app.get('io'),
+      recipient: req.params.userId,
+      actor: req.user.id,
+      type: 'friend_request',
+      message: 'sent you a friend request',
+      resourceId: friendship.id,
+    })
     return res.status(201).json({ status: 'pending' })
   }),
 )
@@ -120,6 +139,13 @@ router.patch(
     if (!friendship) throw new HttpError(404, 'Friend request not found')
     friendship.status = 'accepted'
     await friendship.save()
+    await createNotification({
+      io: req.app.get('io'),
+      recipient: friendship.requester,
+      actor: req.user.id,
+      type: 'friend_accepted',
+      message: 'accepted your friend request',
+    })
     res.json({ status: 'accepted' })
   }),
 )

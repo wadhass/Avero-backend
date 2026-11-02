@@ -2,6 +2,7 @@ import { Router } from 'express'
 import mongoose from 'mongoose'
 import authenticate from '../middleware/authenticate.js'
 import { receiveAvatar, removeUploadedMedia } from '../middleware/mediaUpload.js'
+import Follow from '../models/Follow.js'
 import Friendship from '../models/Friendship.js'
 import Post from '../models/Post.js'
 import User from '../models/User.js'
@@ -57,6 +58,15 @@ router.get(
           ? 'pending-sent'
           : 'pending-received'
 
+    const [friendCount, followersCount, followingCount, isFollowing] = await Promise.all([
+      Friendship.countDocuments({
+        status: 'accepted',
+        $or: [{ requester: user.id }, { recipient: user.id }],
+      }),
+      Follow.countDocuments({ following: user.id }),
+      Follow.countDocuments({ follower: user.id }),
+      Follow.exists({ follower: req.user.id, following: user.id }),
+    ])
     const posts = await Post.find({ author: user.id })
       .sort({ createdAt: -1 })
       .limit(20)
@@ -67,6 +77,10 @@ router.get(
       user,
       friendStatus,
       requestId: friendship?.id ?? null,
+      friendCount,
+      followersCount,
+      followingCount,
+      isFollowing: Boolean(isFollowing),
       posts,
     })
   }),

@@ -18,6 +18,7 @@ const userSchema = new mongoose.Schema(
     passwordResetTokenHash: { type: String, select: false },
     passwordResetExpiresAt: { type: Date, select: false },
     avatar: { type: String, default: '' },
+    lastSeenAt: { type: Date, default: null },
   },
   { timestamps: true, toJSON: { virtuals: true } },
 )

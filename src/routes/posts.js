@@ -4,6 +4,7 @@ import Post from '../models/Post.js'
 import authenticate from '../middleware/authenticate.js'
 import { mediaTypes, receiveMedia, removeUploadedMedia } from '../middleware/mediaUpload.js'
 import { asyncHandler, HttpError } from '../utils/errors.js'
+import { createNotification } from '../utils/notifications.js'
 
 const router = Router()
 router.use(authenticate)
@@ -96,6 +97,16 @@ router.post(
       post.likes.addToSet(req.user.id)
     }
     await post.save()
+    if (!alreadyLiked) {
+      await createNotification({
+        io: req.app.get('io'),
+        recipient: post.author,
+        actor: req.user.id,
+        type: 'like',
+        message: 'liked your post',
+        resourceId: post.id,
+      })
+    }
     res.json({ liked: !alreadyLiked, likesCount: post.likes.length })
   }),
 )
@@ -116,6 +127,14 @@ router.post(
     post.comments.push({ author: req.user.id, text: text.trim() })
     await post.save()
     await post.populate('comments.author', 'name avatar')
+    await createNotification({
+      io: req.app.get('io'),
+      recipient: post.author,
+      actor: req.user.id,
+      type: 'comment',
+      message: 'commented on your post',
+      resourceId: post.id,
+    })
     res.status(201).json({ comment: post.comments.at(-1) })
   }),
 )

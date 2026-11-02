@@ -8,6 +8,7 @@ import { HttpError } from '../utils/errors.js'
 export const uploadsDirectory = process.env.UPLOADS_DIR
   ? path.resolve(process.env.UPLOADS_DIR)
   : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../uploads')
+export const messageUploadsDirectory = path.resolve(uploadsDirectory, '..', 'private-message-uploads')
 
 export const mediaTypes = new Map([
   ['image/jpeg', { type: 'image', extension: '.jpg' }],
@@ -20,12 +21,37 @@ export const mediaTypes = new Map([
   ['video/quicktime', { type: 'video', extension: '.mov' }],
 ])
 
+const messageMediaTypes = new Map([
+  ...mediaTypes,
+  ['audio/webm', { type: 'audio', extension: '.webm' }],
+  ['audio/ogg', { type: 'audio', extension: '.ogg' }],
+  ['audio/mpeg', { type: 'audio', extension: '.mp3' }],
+  ['audio/mp4', { type: 'audio', extension: '.m4a' }],
+  ['audio/wav', { type: 'audio', extension: '.wav' }],
+  ['audio/x-wav', { type: 'audio', extension: '.wav' }],
+  ['audio/aac', { type: 'audio', extension: '.aac' }],
+  ['application/pdf', { type: 'file', extension: '.pdf' }],
+  ['text/plain', { type: 'file', extension: '.txt' }],
+])
+
+function getNormalizedMessageMediaType(mimeType) {
+  return messageMediaTypes.get(mimeType.toLowerCase().split(';', 1)[0])
+}
+
 export async function removeUploadedMedia(mediaUrl) {
   const filename = mediaUrl.startsWith('/uploads/')
     ? mediaUrl.slice('/uploads/'.length)
     : ''
   if (!/^[\da-f-]{36}\.(jpg|png|gif|webp|avif|mp4|webm|mov)$/.test(filename)) return
   await rm(path.join(uploadsDirectory, filename), { force: true })
+}
+
+export async function removeUploadedMessageMedia(mediaUrl) {
+  const filename = mediaUrl.startsWith('/api/messages/media/')
+    ? mediaUrl.slice('/api/messages/media/'.length)
+    : ''
+  if (!/^[\da-f-]{36}\.(jpg|png|gif|webp|avif|mp4|webm|mov|ogg|mp3|m4a|wav|aac|pdf|txt)$/.test(filename)) return
+  await rm(path.join(messageUploadsDirectory, filename), { force: true })
 }
 
 const storage = multer.diskStorage({
@@ -38,8 +64,22 @@ const storage = multer.diskStorage({
     }
   },
   filename: (req, file, callback) => {
-    const mediaType = mediaTypes.get(file.mimetype)
+    const mediaType = mediaTypes.get(file.mimetype) ?? messageMediaTypes.get(file.mimetype)
     callback(null, `${randomUUID()}${mediaType.extension}`)
+  },
+})
+
+const messageStorage = multer.diskStorage({
+  destination: async (req, file, callback) => {
+    try {
+      await mkdir(messageUploadsDirectory, { recursive: true })
+      callback(null, messageUploadsDirectory)
+    } catch (error) {
+      callback(error)
+    }
+  },
+  filename: (req, file, callback) => {
+    callback(null, `${randomUUID()}${getNormalizedMessageMediaType(file.mimetype).extension}`)
   },
 })
 
@@ -67,6 +107,18 @@ const avatarUpload = multer({
   },
 })
 
+const messageUpload = multer({
+  storage: messageStorage,
+  limits: { fileSize: 50 * 1024 * 1024, files: 1, fields: 1, fieldSize: 5000 },
+  fileFilter: (req, file, callback) => {
+    if (!getNormalizedMessageMediaType(file.mimetype)) {
+      callback(new HttpError(400, 'Choose a supported image, video, audio, PDF, or text file'))
+      return
+    }
+    callback(null, true)
+  },
+})
+
 function receiveUpload(middleware, field, req, res, next) {
   middleware.single(field)(req, res, (error) => {
     if (error instanceof multer.MulterError) {
@@ -87,4 +139,12 @@ export function receiveMedia(req, res, next) {
 
 export function receiveAvatar(req, res, next) {
   receiveUpload(avatarUpload, 'avatar', req, res, next)
+}
+
+export function receiveMessageAttachment(req, res, next) {
+  receiveUpload(messageUpload, 'media', req, res, next)
+}
+
+export function getMessageMediaType(mimeType) {
+  return getNormalizedMessageMediaType(mimeType) ?? null
 }
