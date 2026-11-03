@@ -61,7 +61,7 @@ router.get(
       return
     }
     const otherUserId = message.sender.equals(req.user.id) ? message.recipient : message.sender
-    await requireFriend(otherUserId, req.user.id)
+    await requireConnection(otherUserId, req.user.id)
 
     res.type(path.extname(filename))
     res.set('Content-Disposition', 'inline')
@@ -71,15 +71,17 @@ router.get(
   }),
 )
 
-async function requireFriend(userId, currentUserId) {
+async function requireConnection(userId, currentUserId) {
   const friendship = await Friendship.findOne({
-    status: 'accepted',
+    status: { $in: ['pending', 'accepted'] },
     $or: [
       { requester: currentUserId, recipient: userId },
       { requester: userId, recipient: currentUserId },
     ],
   })
-  if (!friendship) throw new HttpError(403, 'You can message friends only')
+  if (!friendship) {
+    throw new HttpError(403, 'You can message people with an active friend request or accepted friendship only')
+  }
 }
 
 const validateMessageRecipient = asyncHandler(async (req, res, next) => {
@@ -89,7 +91,7 @@ const validateMessageRecipient = asyncHandler(async (req, res, next) => {
   if (!(await User.exists({ _id: req.params.userId }))) {
     throw new HttpError(404, 'User not found')
   }
-  await requireFriend(req.params.userId, req.user.id)
+  await requireConnection(req.params.userId, req.user.id)
   next()
 })
 
@@ -99,7 +101,7 @@ router.get(
     if (!mongoose.isValidObjectId(req.params.userId)) {
       throw new HttpError(400, 'Invalid user id')
     }
-    await requireFriend(req.params.userId, req.user.id)
+    await requireConnection(req.params.userId, req.user.id)
     const readAt = new Date()
     const unreadMessages = await Message.find({
       sender: req.params.userId,
