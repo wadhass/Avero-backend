@@ -10,6 +10,20 @@ const router = Router()
 router.use(authenticate)
 
 router.get(
+  '/reels',
+  asyncHandler(async (req, res) => {
+    const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1)
+    const posts = await Post.find({ isReel: true, mediaType: 'video' })
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * 10)
+      .limit(10)
+      .populate('author', 'name avatar')
+      .populate('comments.author', 'name avatar')
+    res.json({ reels: posts })
+  }),
+)
+
+router.get(
   '/',
   asyncHandler(async (req, res) => {
     const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1)
@@ -35,12 +49,19 @@ router.post(
   receiveMedia,
   asyncHandler(async (req, res) => {
     try {
-      const { text = '', imageUrl = '' } = req.body
+      const { text = '', imageUrl = '', isReel: reelValue = false } = req.body
+      const isReel = reelValue === true || reelValue === 'true'
       if (typeof text !== 'string' || text.trim().length > 5000) {
         throw new HttpError(400, 'Post text must be 5000 characters or fewer')
       }
+      if (reelValue !== true && reelValue !== false && reelValue !== 'true' && reelValue !== 'false') {
+        throw new HttpError(400, 'Reel selection is invalid')
+      }
       if (typeof imageUrl !== 'string' || imageUrl.length > 2048) {
         throw new HttpError(400, 'Image URL must be a valid text value')
+      }
+      if (isReel && (!req.file || mediaTypes.get(req.file.mimetype)?.type !== 'video')) {
+        throw new HttpError(400, 'A reel must include an uploaded video')
       }
       if (!text.trim() && !imageUrl.trim() && !req.file) {
         throw new HttpError(400, 'A post must contain text or media')
@@ -53,6 +74,7 @@ router.post(
         imageUrl: imageUrl.trim(),
         mediaUrl: req.file ? `/uploads/${req.file.filename}` : '',
         mediaType: uploadedMedia?.type ?? '',
+        isReel,
       })
       await post.populate('author', 'name avatar')
       res.status(201).json({ post })

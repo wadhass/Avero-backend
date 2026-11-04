@@ -15,6 +15,7 @@ const postSchema = new mongoose.Schema(
     imageUrl: { type: String, default: '' },
     mediaUrl: { type: String, default: '' },
     mediaType: { type: String, enum: ['', 'image', 'video'], default: '' },
+    isReel: { type: Boolean, default: false },
     likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     comments: [commentSchema],
   },

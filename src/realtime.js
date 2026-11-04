@@ -1,10 +1,10 @@
-import jwt from 'jsonwebtoken'
 import { Server } from 'socket.io'
 import CallSession from './models/CallSession.js'
 import Conversation from './models/Conversation.js'
 import Friendship from './models/Friendship.js'
 import Message from './models/Message.js'
 import User from './models/User.js'
+import resolveUserFromToken from './middleware/resolveUserFromToken.js'
 import { createNotification } from './utils/notifications.js'
 
 export default function createRealtimeServer(httpServer, origins) {
@@ -50,14 +50,12 @@ export default function createRealtimeServer(httpServer, origins) {
       if (typeof token !== 'string' || !token) {
         return next(new Error('Sign in to connect'))
       }
-      const { userId } = jwt.verify(token, process.env.JWT_SECRET)
-      const user = await User.findById(userId).select('_id')
-      if (!user) return next(new Error('Account not found'))
+      const user = await resolveUserFromToken(token)
       socket.data.userId = user.id
       return next()
     } catch (error) {
-      if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-        return next(new Error('Your session is invalid or expired'))
+      if (error.status) {
+        return next(new Error(error.message))
       }
       return next(error)
     }

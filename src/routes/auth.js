@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken'
 import rateLimit from 'express-rate-limit'
 import User from '../models/User.js'
 import authenticate from '../middleware/authenticate.js'
+import authenticateFirebase from '../middleware/authenticateFirebase.js'
 import { asyncHandler, HttpError } from '../utils/errors.js'
 import sendEmail from '../utils/sendEmail.js'
 
@@ -197,7 +198,12 @@ router.post(
     }
 
     const user = await User.findOne({ email: email.trim().toLowerCase() }).select('+passwordHash')
-    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+    if (
+      !user ||
+      user.firebaseUid ||
+      !user.passwordHash ||
+      !(await bcrypt.compare(password, user.passwordHash))
+    ) {
       throw new HttpError(401, 'Email or password is incorrect')
     }
     if (user.emailVerified === false) {
@@ -218,7 +224,7 @@ router.post(
     }
 
     const user = await User.findOne({ email: email.trim().toLowerCase() })
-    if (user) {
+    if (user && !user.firebaseUid) {
       const token = randomBytes(32).toString('hex')
       user.passwordResetTokenHash = hashResetToken(token)
       user.passwordResetExpiresAt = new Date(Date.now() + 30 * 60 * 1000)
@@ -269,6 +275,10 @@ const resetPasswordHandler = asyncHandler(async (req, res) => {
 router.post(['/reset-password/:token', '/reset-password'], resetLimiter, resetPasswordHandler)
 
 router.get('/me', authenticate, (req, res) => {
+  res.json({ user: publicUser(req.user) })
+})
+
+router.post('/firebase/session', authenticateFirebase, (req, res) => {
   res.json({ user: publicUser(req.user) })
 })
 

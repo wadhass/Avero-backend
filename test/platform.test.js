@@ -5,6 +5,8 @@ import CallSession from '../src/models/CallSession.js'
 import Follow from '../src/models/Follow.js'
 import Message from '../src/models/Message.js'
 import Notification from '../src/models/Notification.js'
+import Post from '../src/models/Post.js'
+import User from '../src/models/User.js'
 import conversationsRouter from '../src/routes/conversations.js'
 import { buildIceServers } from '../src/routes/calls.js'
 import {
@@ -49,6 +51,31 @@ test('notifications have read-state and recipient indexes', () => {
   assert.ok(Notification.schema.path('readAt'))
   assert.ok(Notification.schema.indexes().some(([keys]) => (
     keys.recipient === 1 && keys.readAt === 1
+  )))
+})
+
+test('posts distinguish reels from regular video and image posts', () => {
+  assert.equal(Post.schema.path('isReel').defaultValue, false)
+  const reel = new Post({
+    author: '507f1f77bcf86cd799439011',
+    mediaUrl: '/uploads/reel.mp4',
+    mediaType: 'video',
+    isReel: true,
+  })
+  assert.equal(reel.validateSync(), undefined)
+})
+
+test('Firebase users can be represented without a legacy password hash', () => {
+  const firebaseUser = new User({
+    name: 'Firebase User',
+    email: 'firebase@example.test',
+    firebaseUid: 'firebase-user-id',
+    emailVerified: true,
+  })
+
+  assert.equal(firebaseUser.validateSync(), undefined)
+  assert.ok(User.schema.indexes().some(([keys, options]) => (
+    keys.firebaseUid === 1 && options.unique && options.sparse
   )))
 })
 
