@@ -11,6 +11,7 @@ import conversationsRouter from '../src/routes/conversations.js'
 import { buildIceServers } from '../src/routes/calls.js'
 import {
   getMessageMediaType,
+  getMessageMediaContentType,
   messageUploadsDirectory,
   uploadsDirectory,
 } from '../src/middleware/mediaUpload.js'
@@ -41,6 +42,8 @@ test('messages support text, attachments, delivery and read receipts', () => {
 
 test('message media accepts supported audio and safe document MIME types only', () => {
   assert.equal(getMessageMediaType('audio/webm;codecs=opus').type, 'audio')
+  assert.equal(getMessageMediaContentType('audio', 'recording.webm'), 'audio/webm')
+  assert.equal(getMessageMediaContentType('audio', 'recording.m4a'), 'audio/mp4')
   assert.equal(getMessageMediaType('application/pdf').type, 'file')
   assert.equal(getMessageMediaType('text/plain').type, 'file')
   assert.equal(getMessageMediaType('text/html'), null)

@@ -148,3 +148,15 @@ export function receiveMessageAttachment(req, res, next) {
 export function getMessageMediaType(mimeType) {
   return getNormalizedMessageMediaType(mimeType) ?? null
 }
+
+export function getMessageMediaContentType(mediaType, filename) {
+  if (mediaType !== 'audio') return null
+  return new Map([
+    ['.webm', 'audio/webm'],
+    ['.ogg', 'audio/ogg'],
+    ['.mp3', 'audio/mpeg'],
+    ['.m4a', 'audio/mp4'],
+    ['.wav', 'audio/wav'],
+    ['.aac', 'audio/aac'],
+  ]).get(path.extname(filename).toLowerCase()) ?? 'application/octet-stream'
+}
