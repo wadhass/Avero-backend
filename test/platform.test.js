@@ -41,6 +41,7 @@ test('messages support text, attachments, delivery and read receipts', () => {
 })
 
 test('message media accepts supported audio and safe document MIME types only', () => {
+  assert.equal(getMessageMediaType('image/jpeg').type, 'image')
   assert.equal(getMessageMediaType('audio/webm;codecs=opus').type, 'audio')
   assert.equal(getMessageMediaContentType('audio', 'recording.webm'), 'audio/webm')
   assert.equal(getMessageMediaContentType('audio', 'recording.m4a'), 'audio/mp4')
