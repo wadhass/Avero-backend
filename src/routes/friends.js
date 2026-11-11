@@ -22,12 +22,16 @@ router.get(
     res.json({
       friends: relationships
         .filter((relationship) => relationship.status === 'accepted')
-        .map((relationship) => ({
-          ...(relationship.requester.id === req.user.id
-            ? relationship.recipient.toObject()
-            : relationship.requester.toObject()),
-          relationshipId: relationship.id,
-        })),
+        .map((relationship) => {
+          const friend = relationship.requester.id === req.user.id
+            ? relationship.recipient
+            : relationship.requester
+          return {
+            ...friend.toObject(),
+            id: friend.id,
+            relationshipId: relationship.id,
+          }
+        }),
       incoming: relationships
         .filter((relationship) =>
           relationship.status === 'pending' && relationship.recipient.id === req.user.id,
@@ -70,6 +74,38 @@ router.get(
       .limit(20)
       .sort({ name: 1 })
     res.json({ users })
+  }),
+)
+
+router.get(
+  '/:userId',
+  asyncHandler(async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.userId)) {
+      throw new HttpError(400, 'Invalid user id')
+    }
+    if (!(await User.exists({ _id: req.params.userId }))) {
+      throw new HttpError(404, 'User not found')
+    }
+
+    const relationships = await Friendship.find({
+      status: 'accepted',
+      $or: [
+        { requester: req.params.userId },
+        { recipient: req.params.userId },
+      ],
+    })
+      .populate('requester', 'name avatar')
+      .populate('recipient', 'name avatar')
+      .sort({ updatedAt: -1 })
+
+    const friends = relationships.map((relationship) => {
+      const friend = relationship.requester._id.equals(req.params.userId)
+        ? relationship.recipient
+        : relationship.requester
+      return { ...friend.toObject(), id: friend.id }
+    })
+
+    res.json({ friends })
   }),
 )
 
