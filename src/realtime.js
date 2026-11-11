@@ -44,6 +44,17 @@ export default function createRealtimeServer(httpServer, origins) {
     })
   }
 
+  async function getFriendIds(userId) {
+    const friendships = await Friendship.find({
+      status: 'accepted',
+      $or: [{ requester: userId }, { recipient: userId }],
+    }).select('requester recipient').lean()
+
+    return friendships.map(({ requester, recipient }) => (
+      String(requester) === userId ? String(recipient) : String(requester)
+    ))
+  }
+
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth?.token
@@ -67,7 +78,18 @@ export default function createRealtimeServer(httpServer, origins) {
     sockets.add(socket.id)
     connectedUsers.set(userId, sockets)
     socket.join(`user:${userId}`)
-    socket.emit('presence:state', { online: true })
+    getFriendIds(userId)
+      .then((friendIds) => {
+        socket.emit('presence:state', {
+          onlineUserIds: friendIds.filter((friendId) => connectedUsers.get(friendId)?.size),
+        })
+        if (sockets.size === 1) {
+          friendIds.forEach((friendId) => {
+            io.to(`user:${friendId}`).emit('presence:update', { userId, online: true })
+          })
+        }
+      })
+      .catch((error) => console.error('Unable to broadcast online presence', error))
 
     socket.on('call:start', async (payload = {}, acknowledge) => {
       if (typeof acknowledge !== 'function') return
@@ -357,8 +379,12 @@ export default function createRealtimeServer(httpServer, origins) {
       const lastSeenAt = new Date()
       try {
         await User.updateOne({ _id: userId }, { $set: { lastSeenAt } })
+        const friendIds = await getFriendIds(userId)
+        friendIds.forEach((friendId) => {
+          io.to(`user:${friendId}`).emit('presence:update', { userId, online: false })
+        })
       } catch (error) {
-        console.error('Unable to update last-seen time', error)
+        console.error('Unable to update last-seen time or broadcast offline presence', error)
       }
     })
   })
