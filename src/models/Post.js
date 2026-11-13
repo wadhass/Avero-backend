@@ -18,8 +18,15 @@ const postSchema = new mongoose.Schema(
     isReel: { type: Boolean, default: false },
     likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     comments: [commentSchema],
+    savedBy: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+      default: [],
+      select: false,
+    },
   },
   { timestamps: true, toJSON: { virtuals: true } },
 )
+
+postSchema.index({ savedBy: 1, createdAt: -1 })
 
 export default mongoose.model('Post', postSchema)

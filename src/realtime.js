@@ -7,6 +7,59 @@ import User from './models/User.js'
 import resolveUserFromToken from './middleware/resolveUserFromToken.js'
 import { createNotification } from './utils/notifications.js'
 
+export async function endUserCallsOnDisconnect({
+  userId,
+  io,
+  activeCallsByUser,
+  ringingTimers,
+  CallSessionModel = CallSession,
+  releaseCallHandler,
+}) {
+  const callIds = [...(activeCallsByUser.get(String(userId)) ?? new Set())]
+  if (!callIds.length) return []
+
+  const endedCalls = []
+  for (const callId of callIds) {
+    const call = await CallSessionModel.findOne({
+      _id: callId,
+      $or: [{ caller: userId }, { recipient: userId }],
+      status: { $in: ['ringing', 'active'] },
+    }).lean()
+    if (!call) continue
+
+    const nextStatus = call.status === 'ringing' ? 'missed' : 'ended'
+    const finishedCall = await CallSessionModel.findByIdAndUpdate(
+      callId,
+      { $set: { status: nextStatus, endedAt: new Date() } },
+      { new: true },
+    )
+    if (!finishedCall) continue
+
+    if (releaseCallHandler) releaseCallHandler(finishedCall)
+    else {
+      ringingTimers.get(String(callId))?.clearTimeout()
+      ringingTimers.delete(String(callId))
+      for (const participant of [String(finishedCall.caller), String(finishedCall.recipient)]) {
+        const calls = activeCallsByUser.get(participant)
+        calls?.delete(String(callId))
+        if (!calls?.size) activeCallsByUser.delete(participant)
+      }
+    }
+    const otherParticipant = String(finishedCall.caller) === String(userId)
+      ? String(finishedCall.recipient)
+      : String(finishedCall.caller)
+    io.to(`user:${otherParticipant}`).emit('call:finished', {
+      callId: finishedCall.id,
+      reason: nextStatus,
+      endedAt: finishedCall.endedAt,
+      answeredAt: finishedCall.answeredAt,
+    })
+    endedCalls.push(finishedCall)
+  }
+
+  return endedCalls
+}
+
 export default function createRealtimeServer(httpServer, origins) {
   const io = new Server(httpServer, {
     cors: { origin: origins },
@@ -24,11 +77,12 @@ export default function createRealtimeServer(httpServer, origins) {
   }
 
   function releaseCall(call) {
-    ringingTimers.get(call.id)?.clearTimeout()
-    ringingTimers.delete(call.id)
+    const callId = String(call.id ?? call._id ?? call)
+    ringingTimers.get(callId)?.clearTimeout()
+    ringingTimers.delete(callId)
     for (const userId of [String(call.caller), String(call.recipient)]) {
       const calls = activeCallsByUser.get(userId)
-      calls?.delete(call.id)
+      calls?.delete(callId)
       if (!calls?.size) activeCallsByUser.delete(userId)
     }
   }
@@ -378,7 +432,17 @@ export default function createRealtimeServer(httpServer, origins) {
       connectedUsers.delete(userId)
       const lastSeenAt = new Date()
       try {
-        await User.updateOne({ _id: userId }, { $set: { lastSeenAt } })
+        await Promise.all([
+          User.updateOne({ _id: userId }, { $set: { lastSeenAt } }),
+          endUserCallsOnDisconnect({
+            userId,
+            io,
+            activeCallsByUser,
+            ringingTimers,
+            CallSessionModel: CallSession,
+            releaseCallHandler: releaseCall,
+          }),
+        ])
         const friendIds = await getFriendIds(userId)
         friendIds.forEach((friendId) => {
           io.to(`user:${friendId}`).emit('presence:update', { userId, online: false })

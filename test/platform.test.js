@@ -9,6 +9,7 @@ import Post from '../src/models/Post.js'
 import User from '../src/models/User.js'
 import conversationsRouter from '../src/routes/conversations.js'
 import { buildIceServers } from '../src/routes/calls.js'
+import { endUserCallsOnDisconnect } from '../src/realtime.js'
 import {
   getMessageMediaType,
   getMessageMediaContentType,
@@ -60,6 +61,10 @@ test('notifications have read-state and recipient indexes', () => {
 
 test('posts distinguish reels from regular video and image posts', () => {
   assert.equal(Post.schema.path('isReel').defaultValue, false)
+  assert.equal(Post.schema.path('savedBy').options.select, false)
+  assert.ok(Post.schema.indexes().some(([keys]) => (
+    keys.savedBy === 1 && keys.createdAt === -1
+  )))
   const reel = new Post({
     author: '507f1f77bcf86cd799439011',
     mediaUrl: '/uploads/reel.mp4',
@@ -107,6 +112,65 @@ test('calls persist one-to-one call states and index call history', () => {
   assert.ok(CallSession.schema.indexes().some(([keys]) => (
     keys.caller === 1 && keys.createdAt === -1
   )))
+})
+
+test('disconnecting the last socket clears active call reservations and notifies the peer', async () => {
+  const callId = '507f1f77bcf86cd799439011'
+  const activeCallsByUser = new Map([
+    ['caller-user', new Set([callId])],
+    ['recipient-user', new Set([callId])],
+  ])
+  const ringTimer = { clearTimeout: () => {} }
+  const ringingTimers = new Map([[callId, ringTimer]])
+  let emitted = []
+  const io = {
+    to: (room) => ({
+      emit: (event, payload) => {
+        emitted.push({ room, event, payload })
+      },
+    }),
+  }
+
+  const CallSessionModel = {
+    findOne: () => ({
+      lean: async () => ({
+        _id: callId,
+        caller: 'caller-user',
+        recipient: 'recipient-user',
+        status: 'ringing',
+      }),
+    }),
+    findByIdAndUpdate: async () => ({
+      id: callId,
+      _id: callId,
+      caller: 'caller-user',
+      recipient: 'recipient-user',
+      status: 'missed',
+      endedAt: new Date('2024-01-01T00:00:00Z'),
+      answeredAt: null,
+    }),
+  }
+
+  const finishedCalls = await endUserCallsOnDisconnect({
+    userId: 'caller-user',
+    io,
+    activeCallsByUser,
+    ringingTimers,
+    CallSessionModel,
+    releaseCallHandler: (call) => {
+      for (const userId of [String(call.caller), String(call.recipient)]) {
+        const calls = activeCallsByUser.get(userId)
+        calls?.delete(String(call.id))
+        if (!calls?.size) activeCallsByUser.delete(userId)
+      }
+    },
+  })
+
+  assert.equal(finishedCalls.length, 1)
+  assert.equal(finishedCalls[0].status, 'missed')
+  assert.equal(activeCallsByUser.has('caller-user'), false)
+  assert.equal(activeCallsByUser.has('recipient-user'), false)
+  assert.deepEqual(emitted[0].payload.reason, 'missed')
 })
 
 test('ICE configuration issues temporary TURN credentials and rejects invalid settings', () => {

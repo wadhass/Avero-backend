@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import mongoose from 'mongoose'
 import Post from '../models/Post.js'
+import Follow from '../models/Follow.js'
 import authenticate from '../middleware/authenticate.js'
 import { mediaTypes, receiveMedia, removeUploadedMedia } from '../middleware/mediaUpload.js'
 import { asyncHandler, HttpError } from '../utils/errors.js'
@@ -12,14 +13,84 @@ router.use(authenticate)
 router.get(
   '/reels',
   asyncHandler(async (req, res) => {
-    const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1)
-    const posts = await Post.find({ isReel: true, mediaType: 'video' })
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * 10)
-      .limit(10)
-      .populate('author', 'name avatar')
-      .populate('comments.author', 'name avatar')
-    res.json({ reels: posts })
+    const parsedPage = Number.parseInt(req.query.page, 10)
+    const page = Number.isSafeInteger(parsedPage) && parsedPage > 0
+      ? Math.min(parsedPage, 1000)
+      : 1
+    const feed = typeof req.query.feed === 'string' ? req.query.feed : 'latest'
+    if (!['latest', 'for-you', 'following', 'saved'].includes(feed)) {
+      throw new HttpError(400, 'Choose a valid Reels feed')
+    }
+
+    const userId = new mongoose.Types.ObjectId(req.user.id)
+    const filter = { isReel: true, mediaType: 'video' }
+    let followingIds = []
+    if (feed === 'following' || feed === 'for-you') {
+      followingIds = await Follow.distinct('following', { follower: userId })
+      if (feed === 'following') filter.author = { $in: followingIds }
+    }
+    if (feed === 'saved') filter.savedBy = userId
+
+    const pipeline = [{ $match: filter }]
+    if (feed === 'for-you') {
+      pipeline.push({
+        $addFields: {
+          recommendationScore: {
+            $multiply: [
+              {
+                $add: [
+                  { $size: { $ifNull: ['$likes', []] } },
+                  { $multiply: [{ $size: { $ifNull: ['$comments', []] } }, 2] },
+                  1,
+                ],
+              },
+              { $cond: [{ $in: ['$author', followingIds] }, 1.5, 1] },
+              {
+                $divide: [
+                  1,
+                  {
+                    $add: [
+                      { $divide: [{ $subtract: [new Date(), '$createdAt'] }, 3600000] },
+                      2,
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      })
+    }
+    pipeline.push(
+      {
+        $addFields: {
+          isSaved: { $in: [userId, { $ifNull: ['$savedBy', []] }] },
+        },
+      },
+      {
+        $sort: feed === 'for-you'
+          ? { recommendationScore: -1, createdAt: -1, _id: -1 }
+          : { createdAt: -1, _id: -1 },
+      },
+      { $skip: (page - 1) * 10 },
+      { $limit: 10 },
+      { $project: { savedBy: 0, recommendationScore: 0 } },
+    )
+    const posts = await Post.aggregate(pipeline)
+    await Post.populate(posts, [
+      { path: 'author', select: 'name avatar' },
+      { path: 'comments.author', select: 'name avatar' },
+    ])
+    res.json({
+      reels: posts.map((post) => ({
+        ...post,
+        id: String(post._id),
+        comments: (post.comments ?? []).map((comment) => ({
+          ...comment,
+          id: String(comment._id),
+        })),
+      })),
+    })
   }),
 )
 
@@ -130,6 +201,24 @@ router.post(
       })
     }
     res.json({ liked: !alreadyLiked, likesCount: post.likes.length })
+  }),
+)
+
+router.post(
+  '/:postId/save',
+  asyncHandler(async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.postId)) {
+      throw new HttpError(400, 'Invalid post id')
+    }
+    const post = await Post.findById(req.params.postId).select('+savedBy')
+    if (!post) throw new HttpError(404, 'Post not found')
+    if (!post.isReel) throw new HttpError(400, 'Only Reels can be saved here')
+
+    const alreadySaved = post.savedBy.some((id) => id.equals(req.user.id))
+    if (alreadySaved) post.savedBy.pull(req.user.id)
+    else post.savedBy.addToSet(req.user.id)
+    await post.save()
+    res.json({ saved: !alreadySaved })
   }),
 )
 
