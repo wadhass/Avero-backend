@@ -85,7 +85,7 @@ const messageStorage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 50 * 1024 * 1024, files: 1, fields: 1, fieldSize: 5000 },
+  limits: { fileSize: 50 * 1024 * 1024, files: 1, fields: 2, fieldSize: 5000 },
   fileFilter: (req, file, callback) => {
     if (!mediaTypes.has(file.mimetype)) {
       callback(new HttpError(400, 'Choose a supported image or video file'))

@@ -10,6 +10,7 @@ import conversationRoutes from './routes/conversations.js'
 import callRoutes from './routes/calls.js'
 import friendRoutes from './routes/friends.js'
 import followRoutes from './routes/follows.js'
+import liveRoutes from './routes/live.js'
 import messageRoutes from './routes/messages.js'
 import notificationRoutes from './routes/notifications.js'
 import postRoutes from './routes/posts.js'
@@ -44,6 +45,7 @@ app.get('/api/health', (req, res) => {
 app.use('/uploads', express.static(uploadsDirectory, { dotfiles: 'deny', index: false }))
 app.use('/api/auth', authRoutes)
 app.use('/api/calls', callRoutes)
+app.use('/api/live', liveRoutes)
 app.use('/api/conversations', conversationRoutes)
 app.use('/api/posts', postRoutes)
 app.use('/api/stories', storyRoutes)

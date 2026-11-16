@@ -1,21 +1,28 @@
 import assert from 'node:assert/strict'
+import { once } from 'node:events'
+import express from 'express'
 import test from 'node:test'
 import Conversation from '../src/models/Conversation.js'
 import CallSession from '../src/models/CallSession.js'
 import Follow from '../src/models/Follow.js'
+import LiveStream from '../src/models/LiveStream.js'
 import Message from '../src/models/Message.js'
 import Notification from '../src/models/Notification.js'
 import Post from '../src/models/Post.js'
 import User from '../src/models/User.js'
 import conversationsRouter from '../src/routes/conversations.js'
 import { buildIceServers } from '../src/routes/calls.js'
+import { createLiveKitToken } from '../src/routes/live.js'
 import { endUserCallsOnDisconnect } from '../src/realtime.js'
 import {
   getMessageMediaType,
   getMessageMediaContentType,
   messageUploadsDirectory,
+  receiveMedia,
+  removeUploadedMedia,
   uploadsDirectory,
 } from '../src/middleware/mediaUpload.js'
+import { TokenVerifier } from 'livekit-server-sdk'
 
 test('follows enforce unique directed relationships and query indexes', () => {
   const indexes = Follow.schema.indexes()
@@ -72,6 +79,66 @@ test('posts distinguish reels from regular video and image posts', () => {
     isReel: true,
   })
   assert.equal(reel.validateSync(), undefined)
+})
+
+test('post uploads accept both caption and reel fields with a video file', async () => {
+  const app = express()
+  let uploadedMediaUrl = ''
+  app.post('/upload', receiveMedia, (req, res) => {
+    uploadedMediaUrl = `/uploads/${req.file.filename}`
+    res.status(201).json({ text: req.body.text, isReel: req.body.isReel, mediaType: req.file.mimetype })
+  })
+
+  const server = app.listen(0)
+  await once(server, 'listening')
+  try {
+    const form = new FormData()
+    form.set('text', 'A test reel')
+    form.set('isReel', 'true')
+    form.set('media', new Blob(['video bytes'], { type: 'video/mp4' }), 'reel.mp4')
+
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/upload`, {
+      method: 'POST',
+      body: form,
+    })
+    assert.equal(response.status, 201)
+    assert.deepEqual(await response.json(), {
+      text: 'A test reel',
+      isReel: 'true',
+      mediaType: 'video/mp4',
+    })
+  } finally {
+    if (uploadedMediaUrl) await removeUploadedMedia(uploadedMediaUrl)
+    server.closeAllConnections()
+    await new Promise((resolve) => server.close(resolve))
+  }
+})
+
+test('LiveKit access tokens allow viewers to subscribe and publish chat only', async () => {
+  const token = await createLiveKitToken({
+    apiKey: 'test-key',
+    apiSecret: 'test-secret',
+    identity: 'viewer-id',
+    name: 'Viewer',
+    roomName: 'qavero-live-test',
+    canPublish: false,
+  })
+  const grants = await new TokenVerifier('test-key', 'test-secret').verify(token)
+
+  assert.equal(grants.video.room, 'qavero-live-test')
+  assert.equal(grants.video.canPublish, false)
+  assert.equal(grants.video.canPublishData, true)
+  assert.equal(grants.video.canSubscribe, true)
+})
+
+test('live streams have one active broadcast per host and query indexes', () => {
+  assert.deepEqual(LiveStream.schema.path('status').enumValues, ['live', 'ended'])
+  assert.ok(LiveStream.schema.indexes().some(([keys, options]) => (
+    keys.host === 1 && options.unique && options.partialFilterExpression.status === 'live'
+  )))
+  assert.ok(LiveStream.schema.indexes().some(([keys]) => (
+    keys.status === 1 && keys.startedAt === -1
+  )))
 })
 
 test('Firebase users can be represented without a legacy password hash', () => {
