@@ -240,6 +240,50 @@ test('disconnecting the last socket clears active call reservations and notifies
   assert.deepEqual(emitted[0].payload.reason, 'missed')
 })
 
+test('disconnect cleanup clears ringing timers using Node timer handles', async () => {
+  const callId = '507f1f77bcf86cd799439011'
+  const timer = setTimeout(() => {}, 60_000)
+  const activeCallsByUser = new Map([
+    ['caller-user', new Set([callId])],
+    ['recipient-user', new Set([callId])],
+  ])
+  const ringingTimers = new Map([[callId, timer]])
+  const io = { to: () => ({ emit: () => {} }) }
+  const CallSessionModel = {
+    findOne: () => ({
+      lean: async () => ({
+        _id: callId,
+        caller: 'caller-user',
+        recipient: 'recipient-user',
+        status: 'ringing',
+      }),
+    }),
+    findByIdAndUpdate: async () => ({
+      id: callId,
+      caller: 'caller-user',
+      recipient: 'recipient-user',
+      status: 'missed',
+      endedAt: new Date(),
+    }),
+  }
+
+  try {
+    const finishedCalls = await endUserCallsOnDisconnect({
+      userId: 'caller-user',
+      io,
+      activeCallsByUser,
+      ringingTimers,
+      CallSessionModel,
+    })
+
+    assert.equal(finishedCalls.length, 1)
+    assert.equal(ringingTimers.has(callId), false)
+    assert.equal(activeCallsByUser.size, 0)
+  } finally {
+    clearTimeout(timer)
+  }
+})
+
 test('ICE configuration issues temporary TURN credentials and rejects invalid settings', () => {
   const iceServers = buildIceServers({
     stunUrls: ['stun:stun.example.test:3478'],

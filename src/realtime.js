@@ -7,6 +7,12 @@ import User from './models/User.js'
 import resolveUserFromToken from './middleware/resolveUserFromToken.js'
 import { createNotification } from './utils/notifications.js'
 
+function clearRingingTimer(ringingTimers, callId) {
+  const timer = ringingTimers.get(String(callId))
+  if (timer) clearTimeout(timer)
+  ringingTimers.delete(String(callId))
+}
+
 export async function endUserCallsOnDisconnect({
   userId,
   io,
@@ -37,8 +43,7 @@ export async function endUserCallsOnDisconnect({
 
     if (releaseCallHandler) releaseCallHandler(finishedCall)
     else {
-      ringingTimers.get(String(callId))?.clearTimeout()
-      ringingTimers.delete(String(callId))
+      clearRingingTimer(ringingTimers, callId)
       for (const participant of [String(finishedCall.caller), String(finishedCall.recipient)]) {
         const calls = activeCallsByUser.get(participant)
         calls?.delete(String(callId))
@@ -78,8 +83,7 @@ export default function createRealtimeServer(httpServer, origins) {
 
   function releaseCall(call) {
     const callId = String(call.id ?? call._id ?? call)
-    ringingTimers.get(callId)?.clearTimeout()
-    ringingTimers.delete(callId)
+    clearRingingTimer(ringingTimers, callId)
     for (const userId of [String(call.caller), String(call.recipient)]) {
       const calls = activeCallsByUser.get(userId)
       calls?.delete(callId)
