@@ -43,10 +43,7 @@ router.get(
       throw new HttpError(404, 'Message attachment not found')
     }
     const mediaUrl = `/api/messages/media/${filename}`
-    const message = await Message.findOne({
-      mediaUrl,
-      $or: [{ sender: req.user.id }, { recipient: req.user.id }],
-    }).select('sender recipient conversation mediaType')
+    const message = await Message.findOne({ mediaUrl }).select('sender recipient conversation mediaType')
     if (!message) throw new HttpError(404, 'Message attachment not found')
     if (message.conversation) {
       const membership = await Conversation.exists({
@@ -54,15 +51,13 @@ router.get(
         'members.user': req.user.id,
       })
       if (!membership) throw new HttpError(404, 'Message attachment not found')
-      res.type(getMessageMediaContentType(message.mediaType, filename) ?? path.extname(filename))
-      res.set('Content-Disposition', 'inline')
-      res.sendFile(filename, { root: messageUploadsDirectory }, (error) => {
-        if (error) next(error)
-      })
-      return
+    } else {
+      if (!message.sender.equals(req.user.id) && !message.recipient?.equals(req.user.id)) {
+        throw new HttpError(404, 'Message attachment not found')
+      }
+      const otherUserId = message.sender.equals(req.user.id) ? message.recipient : message.sender
+      await requireConnection(otherUserId, req.user.id)
     }
-    const otherUserId = message.sender.equals(req.user.id) ? message.recipient : message.sender
-    await requireConnection(otherUserId, req.user.id)
 
     res.type(getMessageMediaContentType(message.mediaType, filename) ?? path.extname(filename))
     res.set('Content-Disposition', 'inline')
